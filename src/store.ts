@@ -52,8 +52,8 @@ export const DEFAULT_EMBED_MAX_BATCH_BYTES = 64 * 1024 * 1024; // 64MB
 export const CHUNK_SIZE_TOKENS = 900;
 export const CHUNK_OVERLAP_TOKENS = Math.floor(CHUNK_SIZE_TOKENS * 0.15);  // 135 tokens (15% overlap)
 // Fallback char-based approximation for sync chunking (~4 chars per token)
-export const CHUNK_SIZE_CHARS = CHUNK_SIZE_TOKENS * 4;  // 3600 chars
-export const CHUNK_OVERLAP_CHARS = CHUNK_OVERLAP_TOKENS * 4;  // 540 chars
+export const CHUNK_SIZE_CHARS = 500; // Phase 1: Chinese optimized chunk size (300-500)
+export const CHUNK_OVERLAP_CHARS = 80; // Phase 1: Chinese optimized overlap (50-80)
 // Search window for finding optimal break points (in tokens, ~200 tokens)
 export const CHUNK_WINDOW_TOKENS = 200;
 export const CHUNK_WINDOW_CHARS = CHUNK_WINDOW_TOKENS * 4;  // 800 chars
@@ -103,7 +103,9 @@ export const BREAK_PATTERNS: [RegExp, number, string][] = [
   [/\n#{6}(?!#)/g, 50, 'h6'],      // ######
   [/\n```/g, 80, 'codeblock'],     // code block boundary (same as h3)
   [/\n(?:---|\*\*\*|___)\s*\n/g, 60, 'hr'],  // horizontal rule
-  [/\n\n+/g, 20, 'blank'],         // paragraph boundary
+  [/\n\n+/g, 40, 'blank'],         // paragraph boundary
+  [/[。！？\n]\n+/g, 35, 'zh_para'], // Phase 1: Chinese paragraph boundary
+  [/[。！？][\n\s]+/g, 30, 'zh_sentence'], // Phase 1: Chinese sentence boundary
   [/\n[-*]\s/g, 5, 'list'],        // unordered list item
   [/\n\d+\.\s/g, 5, 'numlist'],    // ordered list item
   [/\n/g, 1, 'newline'],           // minimal break
@@ -3827,8 +3829,12 @@ export async function hybridQuery(
     }
   }
 
-  // Step 4: RRF fusion — first 2 lists (original FTS + first vec) get 2x weight
-  const weights = rankedLists.map((_, i) => i < 2 ? 2.0 : 1.0);
+  // Phase 1: Bias towards Vector search for Chinese support (Vector 0.8 / Text 0.2)
+  const weights = rankedListMeta.map(meta => {
+    if (meta.source === 'vec') return 0.8;
+    if (meta.source === 'fts') return 0.2;
+    return 1.0;
+  });
   const fused = reciprocalRankFusion(rankedLists, weights);
   const rrfTraceByFile = explain ? buildRrfTrace(rankedLists, weights, rankedListMeta) : null;
   const candidates = fused.slice(0, candidateLimit);
