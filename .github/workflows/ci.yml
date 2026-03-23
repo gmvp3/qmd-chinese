@@ -23,13 +23,13 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
 
-      - name: Install SQLite (Ubuntu)
+      - name: Install SQLite and CMake (Ubuntu)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev
+        run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev cmake
 
-      - name: Install SQLite (macOS)
+      - name: Install SQLite and CMake (macOS)
         if: runner.os == 'macOS'
-        run: brew install sqlite
+        run: brew install sqlite cmake
 
       - run: npm install
 
@@ -53,13 +53,13 @@ jobs:
         with:
           bun-version: latest
 
-      - name: Install SQLite (Ubuntu)
+      - name: Install SQLite and CMake (Ubuntu)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev
+        run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev cmake
 
-      - name: Install SQLite (macOS)
+      - name: Install SQLite and CMake (macOS)
         if: runner.os == 'macOS'
-        run: brew install sqlite
+        run: brew install sqlite cmake
 
       - name: Verify lockfile is up-to-date
         run: bun install --frozen-lockfile
