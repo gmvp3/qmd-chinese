@@ -648,14 +648,14 @@ describe("Document Chunking", () => {
     }
   });
 
-  test("chunkDocument with default params uses 900-token chunks", () => {
-    // Default is CHUNK_SIZE_CHARS (3600 chars) with CHUNK_OVERLAP_CHARS (540 chars)
+  test("chunkDocument with default params uses 500-char chunks", () => {
+    // Default is CHUNK_SIZE_CHARS (500 chars) with CHUNK_OVERLAP_CHARS (80 chars)
     const content = "Word ".repeat(2500);  // ~12500 chars
     const chunks = chunkDocument(content);
     expect(chunks.length).toBeGreaterThan(1);
-    // Each chunk should be around 3600 chars (except last)
-    expect(chunks[0]!.text.length).toBeGreaterThan(2800);
-    expect(chunks[0]!.text.length).toBeLessThanOrEqual(3600);
+    // Each chunk should be around 500 chars (except last)
+    expect(chunks[0]!.text.length).toBeGreaterThan(400);
+    expect(chunks[0]!.text.length).toBeLessThanOrEqual(500);
   });
 });
 

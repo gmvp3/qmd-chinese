@@ -8,6 +8,14 @@
   script now use `--frozen-lockfile` to prevent recurrence. #386
   (thanks @Mic92)
 
+## [1.0.2] - 2026-03-23
+
+### Fixes
+
+- Fix `package.json` repository URL to point to the correct fork (`gmvp3/qmd-chinese`).
+- Add `cmake` to GitHub Actions workflow to ensure `node-llama-cpp` can build its binary if needed.
+- Update `test/store.test.ts` to match the Chinese-optimized `CHUNK_SIZE_CHARS` (500).
+
 ## [1.0.1] - 2026-03-23
 
 ### Changes

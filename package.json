@@ -1,6 +1,6 @@
 {
   "name": "@gmvp3/qmd-chinese",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Query Markup Documents - On-device hybrid search for markdown files with BM25, vector search, and LLM reranking",
   "type": "module",
   "main": "dist/index.js",
@@ -38,11 +38,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/tobi/qmd.git"
+    "url": "git+https://github.com/gmvp3/qmd-chinese.git"
   },
-  "homepage": "https://github.com/tobi/qmd#readme",
+  "homepage": "https://github.com/gmvp3/qmd-chinese#readme",
   "bugs": {
-    "url": "https://github.com/tobi/qmd/issues"
+    "url": "https://github.com/gmvp3/qmd-chinese/issues"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.25.1",
