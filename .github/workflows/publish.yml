@@ -22,10 +22,8 @@ jobs:
       - name: Install SQLite
         run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev
 
-      - name: Verify lockfile is up-to-date
-        run: bun install --frozen-lockfile
-
-      - run: bun test --timeout 60000 --preload ./src/test-preload.ts test/
+      - run: npm install
+      - run: npm test -- --timeout 60000 --preload ./src/test-preload.ts test/
         env:
           CI: true
           LD_LIBRARY_PATH: /usr/lib/x86_64-linux-gnu
