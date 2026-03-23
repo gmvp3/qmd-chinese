@@ -643,8 +643,14 @@ let _sqliteVecAvailable: boolean | null = null;
 function initializeDatabase(db: Database): void {
   // Register segment_zh for Chinese word segmentation in FTS.
   // This must be done on every connection for triggers and FTS to work.
+  let hasSegmentZh = false;
   if (typeof (db as any).function === 'function') {
-    (db as any).function('segment_zh', segmentZh);
+    try {
+      (db as any).function('segment_zh', segmentZh);
+      hasSegmentZh = true;
+    } catch (err) {
+      console.warn("Failed to register segment_zh function:", err);
+    }
   } else {
     // If we're on a runtime that doesn't support custom functions (like Bun),
     // register a no-op so that the SQL triggers don't crash the whole process.
@@ -754,40 +760,50 @@ function initializeDatabase(db: Database): void {
     )
   `);
 
-  // Triggers to keep FTS in sync
+  // Triggers to keep FTS in sync.
+  // We use dynamic SQL for the triggers to handle environments where segment_zh is unavailable (e.g. Bun).
+  const titleExpr = hasSegmentZh ? "segment_zh(new.title)" : "new.title";
+  const bodyExpr = hasSegmentZh
+    ? "segment_zh((SELECT doc FROM content WHERE hash = new.hash))"
+    : "(SELECT doc FROM content WHERE hash = new.hash)";
+
+  // Always drop and recreate triggers to ensure they match current capabilities
+  db.exec(`DROP TRIGGER IF EXISTS documents_ai`);
   db.exec(`
-    CREATE TRIGGER IF NOT EXISTS documents_ai AFTER INSERT ON documents
+    CREATE TRIGGER documents_ai AFTER INSERT ON documents
     WHEN new.active = 1
     BEGIN
       INSERT INTO documents_fts(rowid, filepath, title, body)
       SELECT
         new.id,
         new.collection || '/' || new.path,
-        segment_zh(new.title),
-        segment_zh((SELECT doc FROM content WHERE hash = new.hash))
+        ${titleExpr},
+        ${bodyExpr}
       WHERE new.active = 1;
     END
   `);
 
+  db.exec(`DROP TRIGGER IF EXISTS documents_ad`);
   db.exec(`
-    CREATE TRIGGER IF NOT EXISTS documents_ad AFTER DELETE ON documents BEGIN
+    CREATE TRIGGER documents_ad AFTER DELETE ON documents BEGIN
       DELETE FROM documents_fts WHERE rowid = old.id;
     END
   `);
 
+  db.exec(`DROP TRIGGER IF EXISTS documents_au`);
   db.exec(`
-    CREATE TRIGGER IF NOT EXISTS documents_au AFTER UPDATE ON documents
+    CREATE TRIGGER documents_au AFTER UPDATE ON documents
     BEGIN
-      -- Delete from FTS if no longer active
-      DELETE FROM documents_fts WHERE rowid = old.id AND new.active = 0;
+      -- Always delete old entry from FTS
+      DELETE FROM documents_fts WHERE rowid = old.id;
 
       -- Update FTS if still/newly active
       INSERT OR REPLACE INTO documents_fts(rowid, filepath, title, body)
       SELECT
         new.id,
         new.collection || '/' || new.path,
-        segment_zh(new.title),
-        segment_zh((SELECT doc FROM content WHERE hash = new.hash))
+        ${titleExpr},
+        ${bodyExpr}
       WHERE new.active = 1;
     END
   `);

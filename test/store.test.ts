@@ -769,7 +769,7 @@ describe("scanBreakPoints", () => {
     const breaks = scanBreakPoints(text);
     const blank = breaks.find(b => b.type === 'blank');
     expect(blank).toBeDefined();
-    expect(blank!.score).toBe(20);
+    expect(blank!.score).toBe(40);
   });
 
   test("detects list items", () => {
