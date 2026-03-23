@@ -8,16 +8,11 @@
   script now use `--frozen-lockfile` to prevent recurrence. #386
   (thanks @Mic92)
 
-## [2.0.1] - 2026-03-10
+## [1.0.1] - 2026-03-23
 
 ### Changes
 
-- `qmd skill install` copies the packaged QMD skill into
-  `~/.claude/commands/` for one-command setup. #355 (thanks @nibzard)
-
-### Fixes
-
-- Fix Qwen3-Embedding GGUF filename case — HuggingFace filenames are
+- QMD 中文语义版：引入中文分词，替换底层为 BGE-M3 模型，全面提升中文文档的语义检索精度。
   case-sensitive, the lowercase variant returned 404. #349 (thanks @byheaven)
 - Resolve symlinked global launcher path so `qmd` works correctly when
   installed via `npm i -g`. #352 (thanks @nibzard)
