@@ -641,6 +641,11 @@ export function verifySqliteVecLoaded(db: Database): void {
 let _sqliteVecAvailable: boolean | null = null;
 
 function initializeDatabase(db: Database): void {
+  // Register segment_zh for Chinese word segmentation in FTS
+  if (typeof (db as any).function === 'function') {
+    (db as any).function('segment_zh', segmentZh);
+  }
+
   try {
     loadSqliteVec(db);
     verifySqliteVecLoaded(db);
@@ -752,8 +757,8 @@ function initializeDatabase(db: Database): void {
       SELECT
         new.id,
         new.collection || '/' || new.path,
-        new.title,
-        (SELECT doc FROM content WHERE hash = new.hash)
+        segment_zh(new.title),
+        segment_zh((SELECT doc FROM content WHERE hash = new.hash))
       WHERE new.active = 1;
     END
   `);
@@ -775,8 +780,8 @@ function initializeDatabase(db: Database): void {
       SELECT
         new.id,
         new.collection || '/' || new.path,
-        new.title,
-        (SELECT doc FROM content WHERE hash = new.hash)
+        segment_zh(new.title),
+        segment_zh((SELECT doc FROM content WHERE hash = new.hash))
       WHERE new.active = 1;
     END
   `);
@@ -2021,6 +2026,23 @@ export function getActiveDocumentPaths(db: Database, collectionName: string): st
   return rows.map(r => r.path);
 }
 
+
+let _zhSegmenter: Intl.Segmenter | null = null;
+function segmentZh(text: string): string {
+  if (!text) return "";
+  if (!_zhSegmenter) {
+    _zhSegmenter = new Intl.Segmenter('zh-CN', { granularity: 'word' });
+  }
+  try {
+    return Array.from(_zhSegmenter.segment(text))
+      .filter(s => s.isWordLike)
+      .map(s => s.segment)
+      .join(' ');
+  } catch {
+    return text;
+  }
+}
+
 export { formatQueryForEmbedding, formatDocForEmbedding };
 
 export function chunkDocument(
@@ -2695,7 +2717,8 @@ function buildFTS5Query(query: string): string | null {
       const phrase = s.slice(start, i).trim();
       i++; // skip closing quote
       if (phrase.length > 0) {
-        const sanitized = phrase.split(/\s+/).map(t => sanitizeFTS5Term(t)).filter(t => t).join(' ');
+        const segmented = segmentZh(phrase);
+        const sanitized = segmented.split(/\s+/).map(t => sanitizeFTS5Term(t)).filter(t => t).join(' ');
         if (sanitized) {
           const ftsPhrase = `"${sanitized}"`;  // Exact phrase, no prefix match
           if (negated) {
@@ -2710,14 +2733,17 @@ function buildFTS5Query(query: string): string | null {
       const start = i;
       while (i < s.length && !/[\s"]/.test(s[i]!)) i++;
       const term = s.slice(start, i);
-
-      const sanitized = sanitizeFTS5Term(term);
-      if (sanitized) {
-        const ftsTerm = `"${sanitized}"*`;  // Prefix match
-        if (negated) {
-          negative.push(ftsTerm);
-        } else {
-          positive.push(ftsTerm);
+      const segmented = segmentZh(term);
+      const terms = segmented.split(/\s+/).filter(t => t);
+      for (const t of terms) {
+        const sanitized = sanitizeFTS5Term(t);
+        if (sanitized) {
+          const ftsTerm = `"${sanitized}"*`;  // Prefix match
+          if (negated) {
+            negative.push(ftsTerm);
+          } else {
+            positive.push(ftsTerm);
+          }
         }
       }
     }
