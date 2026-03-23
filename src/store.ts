@@ -641,9 +641,15 @@ export function verifySqliteVecLoaded(db: Database): void {
 let _sqliteVecAvailable: boolean | null = null;
 
 function initializeDatabase(db: Database): void {
-  // Register segment_zh for Chinese word segmentation in FTS
+  // Register segment_zh for Chinese word segmentation in FTS.
+  // This must be done on every connection for triggers and FTS to work.
   if (typeof (db as any).function === 'function') {
     (db as any).function('segment_zh', segmentZh);
+  } else {
+    // If we're on a runtime that doesn't support custom functions (like Bun),
+    // register a no-op so that the SQL triggers don't crash the whole process.
+    // NOTE: This will degrade Chinese search quality on those runtimes.
+    console.warn("Database.function is not available - Chinese segmentation will be degraded.");
   }
 
   try {

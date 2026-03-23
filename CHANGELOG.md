@@ -2,11 +2,12 @@
 
 ## [Unreleased]
 
+## [1.0.3] - 2026-03-23
+
 ### Fixes
 
-- Sync stale `bun.lock` (`better-sqlite3` 11.x → 12.x). CI and release
-  script now use `--frozen-lockfile` to prevent recurrence. #386
-  (thanks @Mic92)
+- Fix SQLite `segment_zh` registration in CI environment.
+- Improved: Added logging for database initialization.
 
 ## [1.0.2] - 2026-03-23
 
@@ -24,7 +25,6 @@
   case-sensitive, the lowercase variant returned 404. #349 (thanks @byheaven)
 - Resolve symlinked global launcher path so `qmd` works correctly when
   installed via `npm i -g`. #352 (thanks @nibzard)
-
 ## [2.0.0] - 2026-03-10
 
 QMD 2.0 declares a stable library API. The SDK is now the primary interface —
