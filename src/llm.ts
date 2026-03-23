@@ -196,7 +196,7 @@ export type RerankDocument = {
 const DEFAULT_EMBED_MODEL = process.env.QMD_EMBED_MODEL ?? "hf:CompendiumLabs/bge-m3-gguf/bge-m3-q8_0.gguf";
 const DEFAULT_RERANK_MODEL = "hf:CompendiumLabs/bge-reranker-v2-m3-gguf/bge-reranker-v2-m3-q8_0.gguf";
 // const DEFAULT_GENERATE_MODEL = "hf:ggml-org/Qwen3-0.6B-GGUF/Qwen3-0.6B-Q8_0.gguf";
-const DEFAULT_GENERATE_MODEL = "hf:tobil/qmd-query-expansion-1.7B-gguf/qmd-query-expansion-1.7B-q4_k_m.gguf";
+const DEFAULT_GENERATE_MODEL = "hf:ggml-org/Qwen2.5-1.5B-Instruct-GGUF/qwen2.5-1.5b-instruct-q4_k_m.gguf";
 
 // Alternative generation models for query expansion:
 // LiquidAI LFM2 - hybrid architecture optimized for edge/on-device inference
@@ -1032,8 +1032,8 @@ export class LlamaCpp implements LLM {
 
     const intent = options.intent;
     const prompt = intent
-      ? `/no_think Expand this search query: ${query}\nQuery intent: ${intent}`
-      : `/no_think Expand this search query: ${query}`;
+      ? `/no_think 扩展此搜索查询：${query}\n查询意图：${intent}`
+      : `/no_think 扩展此搜索查询：${query}`;
 
     // Create a bounded context for expansion to prevent large default VRAM allocations.
     const genContext = await this.generateModel!.createContext({
