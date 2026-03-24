@@ -38,7 +38,7 @@ QMD-Chinese 是专为中文语境深度改造的本地 RAG (检索增强生成) 
 
 Memory Backend: 必须选择 qmd。
 
-QMD Binary: 必须填入本程序的绝对路径 (可通过在终端执行 which qmd 获取，例如 /home/xxx/.nvm/versions/node/v24.14.0/bin/qmd)。
+QMD Binary: 你在命令行输入qmd有效的话，默认为空就行
 
 Include Default Memory: 开启 (绿色)。
 
