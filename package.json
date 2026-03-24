@@ -1,6 +1,6 @@
 {
   "name": "@gmvp3/qmd-chinese",
-  "version": "1.0.4",
+  "version": "1.0.8",
   "description": "Query Markup Documents - On-device hybrid search for markdown files with BM25, vector search, and LLM reranking",
   "type": "module",
   "main": "dist/index.js",

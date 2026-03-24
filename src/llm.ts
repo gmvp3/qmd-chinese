@@ -193,10 +193,10 @@ export type RerankDocument = {
 // HuggingFace model URIs for node-llama-cpp
 // Format: hf:<user>/<repo>/<file>
 // Override via QMD_EMBED_MODEL env var (e.g. hf:Qwen/Qwen3-Embedding-0.6B-GGUF/Qwen3-Embedding-0.6B-Q8_0.gguf)
-const DEFAULT_EMBED_MODEL = process.env.QMD_EMBED_MODEL ?? "hf:CompendiumLabs/bge-m3-gguf/bge-m3-q8_0.gguf";
-const DEFAULT_RERANK_MODEL = "hf:CompendiumLabs/bge-reranker-v2-m3-gguf/bge-reranker-v2-m3-q8_0.gguf";
+const DEFAULT_EMBED_MODEL = process.env.QMD_EMBED_MODEL ?? "hf:gpustack/bge-m3-GGUF/bge-m3-Q8_0.gguf";
+const DEFAULT_RERANK_MODEL = "hf:gpustack/bge-reranker-v2-m3-GGUF/bge-reranker-v2-m3-Q8_0.gguf";
 // const DEFAULT_GENERATE_MODEL = "hf:ggml-org/Qwen3-0.6B-GGUF/Qwen3-0.6B-Q8_0.gguf";
-const DEFAULT_GENERATE_MODEL = "hf:ggml-org/Qwen2.5-1.5B-Instruct-GGUF/qwen2.5-1.5b-instruct-q4_k_m.gguf";
+const DEFAULT_GENERATE_MODEL = "hf:Qwen/Qwen2.5-1.5B-Instruct-GGUF/qwen2.5-1.5b-instruct-q4_k_m.gguf";
 
 // Alternative generation models for query expansion:
 // LiquidAI LFM2 - hybrid architecture optimized for edge/on-device inference
