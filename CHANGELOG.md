@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [1.0.10] - 2026-03-30
+
+### Fixes
+
+- Corrected Query Expansion (Qwen3-1.7B) model filename to `Qwen3-1.7B-Q8_0.gguf`.
+
 ## [1.0.9] - 2026-03-30
 
 ### Features
