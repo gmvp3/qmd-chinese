@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## [1.0.9] - 2026-03-30
+
+### Features
+
+- Upgrade Query Expansion model to **Qwen3-1.7B-Instruct** for better lexical variations and Chinese semantics.
+- Added **QMD MCPorter (MCP mode)** documentation and configuration guide for zero-latency "warm" startup in OpenClaw.
+
+### Fixes
+
+- Synchronized default model constants across `llm.ts` and `store.ts` to ensure consistent behavior.
+- Corrected OpenClaw configuration paths and screenshots in `README.md`.
+
 ## [1.0.3] - 2026-03-23
 
 ### Fixes
