@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [1.0.11] - 2026-03-30
+
+### Changes
+
+- Reverted Query Expansion and Search model back to **Qwen2.5-1.5B-Instruct** for better stability and lower VRAM usage.
+- Synchronized `DEFAULT_GENERATE_MODEL` in `llm.ts` and `DEFAULT_QUERY_MODEL` in `store.ts`.
+
 ## [1.0.10] - 2026-03-30
 
 ### Fixes
