@@ -235,7 +235,8 @@ function parseHfUri(model: string): HfRef | null {
 }
 
 async function getRemoteEtag(ref: HfRef): Promise<string | null> {
-  const url = `https://huggingface.co/${ref.repo}/resolve/main/${ref.file}`;
+  const baseUrl = process.env.HF_ENDPOINT || "https://huggingface.co";
+  const url = `${baseUrl}/${ref.repo}/resolve/main/${ref.file}`;
   try {
     const resp = await fetch(url, { method: "HEAD" });
     if (!resp.ok) return null;
