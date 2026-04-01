@@ -617,7 +617,7 @@ export class LlamaCpp implements LLM {
         const vram = await llama.getVramState();
         const freeMB = vram.free / (1024 * 1024);
         const maxByVram = Math.floor((freeMB * 0.25) / perContextMB);
-        return Math.max(1, Math.min(8, maxByVram));
+        return Math.max(1, Math.min(2, maxByVram));
       } catch {
         return 2;
       }
