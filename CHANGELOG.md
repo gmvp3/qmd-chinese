@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [1.0.15] - 2026-04-01
+
+### Fixes
+
+- **CLI**: Load `.env` configuration from user home directories (`~/.openclaw/.env` and `~/.config/qmd/.env`) in addition to the current working directory, ensuring background daemon processes correctly receive `HF_ENDPOINT` and proxy settings.
+
 ## [1.0.14] - 2026-04-01
 
 ### Fixes

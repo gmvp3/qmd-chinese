@@ -1,4 +1,8 @@
-import "dotenv/config";
+import * as dotenv from "dotenv";
+import { join } from "path";
+dotenv.config({ path: join(process.env.HOME || process.env.USERPROFILE || "", ".config", "qmd", ".env") });
+dotenv.config({ path: join(process.env.HOME || process.env.USERPROFILE || "", ".openclaw", ".env") });
+dotenv.config(); // fallback to CWD
 import { openDatabase } from "../db.js";
 import type { Database } from "../db.js";
 import fastGlob from "fast-glob";
