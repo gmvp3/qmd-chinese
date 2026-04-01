@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { openDatabase } from "../db.js";
 import type { Database } from "../db.js";
 import fastGlob from "fast-glob";

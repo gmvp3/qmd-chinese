@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [1.0.14] - 2026-04-01
+
+### Fixes
+
+- **CLI**: Moved `dotenv/config` to the main CLI entrypoint (`src/cli/qmd.ts`) to ensure `HF_ENDPOINT` is loaded immediately on daemon startup.
+
 ## [1.0.13] - 2026-04-01
 
 ### Fixes
