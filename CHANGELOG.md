@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [1.0.12] - 2026-04-01
+
+### Fixes
+
+- **LLM**: Respect `HF_ENDPOINT` environment variable for HuggingFace model downloads, fixing `fetch failed` errors behind proxies.
+- **LLM**: Reduce maximum parallel embedding contexts on high-VRAM GPUs to prevent `CUDA error: out of memory` (SIGABRT) during `qmd embed`.
+
 ## [1.0.11] - 2026-03-30
 
 ### Changes
