@@ -4,6 +4,7 @@
  * Provides embeddings, text generation, and reranking using local GGUF models.
  */
 
+import "dotenv/config";
 import {
   getLlama,
   resolveModelFile,

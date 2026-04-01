@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [1.0.13] - 2026-04-01
+
+### Fixes
+
+- **LLM**: Require `dotenv/config` on startup so `node-llama-cpp` can properly read the `HF_ENDPOINT` environment variable and download models via mirrors.
+
 ## [1.0.12] - 2026-04-01
 
 ### Fixes
