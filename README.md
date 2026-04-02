@@ -79,6 +79,20 @@ QMD Session Retention (days): 强烈建议设置为 30 或 60 天，定期清理
 
 ![qmd2](./docs/qmd2.png)
 
+⚠️ **【重要配置警告】：防超时配置**
+由于本地大模型（Qwen/BGE）首次加载到显存需要 5-10 秒的冷启动时间，而 OpenClaw 默认搜索超时仅为 4 秒（4000ms）。**如果不修改此项，100% 会触发 `fetch failed` 或 `timeout` 报错。**
+请务必修改 `~/.openclaw/openclaw.json`，在 `memory.qmd` 配置项下增加 `limits.timeoutMs`，设置如下：
+```json
+"memory": {
+  "backend": "qmd",
+  "qmd": {
+    "limits": {
+      "timeoutMs": 120000
+    }
+  }
+}
+```
+
 🛠️ CUDA 硬件加速状态验证与排错
 安装完成后，在终端运行以下命令检查运行状态：
 qmd status
