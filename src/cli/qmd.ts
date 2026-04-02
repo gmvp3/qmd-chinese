@@ -1,5 +1,7 @@
+process.env.HF_ENDPOINT = "https://hf-mirror.com";
 import * as dotenv from "dotenv";
 import { join } from "path";
+import * as os from "os";
 dotenv.config({ path: join(process.env.HOME || process.env.USERPROFILE || "", ".config", "qmd", ".env") });
 dotenv.config({ path: join(process.env.HOME || process.env.USERPROFILE || "", ".openclaw", ".env") });
 dotenv.config(); // fallback to CWD
@@ -305,12 +307,21 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 }
 
+function maskPath(p: string): string {
+  const home = process.env.HOME || process.env.USERPROFILE || "";
+  const tmp = os.tmpdir();
+  if (home && p.startsWith(home)) {
+    return "~" + p.slice(home.length);
+  }
+  if (tmp && p.startsWith(tmp)) {
+    return "/tmp" + p.slice(tmp.length);
+  }
+  return p;
+}
+
 async function showStatus(): Promise<void> {
   const dbPath = getDbPath();
   const db = getDb();
-
-  // Collections are defined in YAML; no duplicate cleanup needed.
-  // Collections are defined in YAML; no duplicate cleanup needed.
 
   // Index size
   let indexSize = 0;
@@ -331,7 +342,7 @@ async function showStatus(): Promise<void> {
   const mostRecent = db.prepare(`SELECT MAX(modified_at) as latest FROM documents WHERE active = 1`).get() as { latest: string | null };
 
   console.log(`${c.bold}QMD Status${c.reset}\n`);
-  console.log(`Index: ${dbPath}`);
+  console.log(`Index: ${maskPath(dbPath)}`);
   console.log(`Size:  ${formatBytes(indexSize)}`);
 
   // MCP daemon status (check PID file liveness)
@@ -384,7 +395,7 @@ async function showStatus(): Promise<void> {
       const contexts = contextsByCollection.get(col.name) || [];
 
       console.log(`  ${c.cyan}${col.name}${c.reset} ${c.dim}(qmd://${col.name}/)${c.reset}`);
-      console.log(`    ${c.dim}Pattern:${c.reset}  ${col.glob_pattern}`);
+      console.log(`    ${c.dim}Pattern:${c.reset}  ${maskPath(col.glob_pattern)}`);
       console.log(`    ${c.dim}Files:${c.reset}    ${col.active_count} (updated ${lastMod})`);
 
       if (contexts.length > 0) {
@@ -1367,7 +1378,7 @@ function collectionList(): void {
     const excludeTag = excluded ? ` ${c.yellow}[excluded]${c.reset}` : '';
 
     console.log(`${c.cyan}${coll.name}${c.reset} ${c.dim}(qmd://${coll.name}/)${c.reset}${excludeTag}`);
-    console.log(`  ${c.dim}Pattern:${c.reset}  ${coll.glob_pattern}`);
+    console.log(`  ${c.dim}Pattern:${c.reset}  ${maskPath(coll.glob_pattern)}`);
     if (yamlColl?.ignore?.length) {
       console.log(`  ${c.dim}Ignore:${c.reset}   ${yamlColl.ignore.join(', ')}`);
     }
@@ -2645,7 +2656,7 @@ function showHelp(): void {
   console.log("  --max-bytes <num>          - Skip files larger than N bytes (default 10240)");
   console.log("  --json/--csv/--md/--xml/--files - Same formats as search");
   console.log("");
-  console.log(`Index: ${getDbPath()}`);
+  console.log(`Index: ${maskPath(getDbPath())}`);
 }
 
 async function showVersion(): Promise<void> {

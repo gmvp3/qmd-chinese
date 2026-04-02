@@ -649,13 +649,13 @@ function initializeDatabase(db: Database): void {
       (db as any).function('segment_zh', segmentZh);
       hasSegmentZh = true;
     } catch (err) {
-      console.warn("Failed to register segment_zh function:", err);
+      console.error("Failed to register segment_zh function:", err);
     }
   } else {
     // If we're on a runtime that doesn't support custom functions (like Bun),
     // register a no-op so that the SQL triggers don't crash the whole process.
     // NOTE: This will degrade Chinese search quality on those runtimes.
-    console.warn("Database.function is not available - Chinese segmentation will be degraded.");
+    // console.warn("Database.function is not available - Chinese segmentation will be degraded.");
   }
 
   try {
@@ -665,7 +665,7 @@ function initializeDatabase(db: Database): void {
   } catch (err) {
     // sqlite-vec is optional — vector search won't work but FTS is fine
     _sqliteVecAvailable = false;
-    console.warn(getErrorMessage(err));
+    console.error(getErrorMessage(err));
   }
   db.exec("PRAGMA journal_mode = WAL");
   db.exec("PRAGMA foreign_keys = ON");
