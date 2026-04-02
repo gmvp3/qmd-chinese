@@ -1,4 +1,5 @@
 process.env.HF_ENDPOINT = "https://hf-mirror.com";
+process.env.DOTENV_CONFIG_QUIET = "true";
 import * as dotenv from "dotenv";
 import { join } from "path";
 import * as os from "os";
