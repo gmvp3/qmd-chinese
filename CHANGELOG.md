@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [1.0.17] - 2026-04-02
+
+### Changed
+- **CLI**: Hardcode `HF_ENDPOINT` to `https://hf-mirror.com` for better Chinese network access.
+- **CLI**: Suppress `dotenv` verbose console output (`DOTENV_CONFIG_QUIET`) which was breaking standard CLI output tests.
+
 ## [1.0.15] - 2026-04-01
 
 ### Fixes
