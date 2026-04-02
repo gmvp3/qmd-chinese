@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [1.0.18] - 2026-04-02
+
+### Fixed
+- **CLI**: Silence `mcporter` STDIO trace logging via `MCPORTER_STDIO_TRACE=0` injection to prevent JSON output corruption when communicating with OpenClaw.
+
+### Documentation
+- **README**: Added critical integration warning regarding OpenClaw's default 4000ms timeout and instructions to increase `timeoutMs` to 120000 to accommodate initial model loading (VRAM cold start).
+
 ## [1.0.17] - 2026-04-02
 
 ### Changed
