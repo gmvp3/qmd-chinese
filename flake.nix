@@ -19,7 +19,7 @@
         });
 
         nodeModulesHashes = {
-          x86_64-linux = "sha256-D0ezO4vqq4iswcAMU2DCql9ZAQvh3me6N9aDB5roq4w=";
+          x86_64-linux = "sha256-eR9JzEGb0Gm3AB8od7yPw0c2AKl/0OYHOpUxs+nATFc=";
           aarch64-darwin = "sha256-qU+9KdR/nTocelyANS09I/4yaQ+7s1LvJNqB27IOK/c=";
 
           # Populate these on first build for additional hosts if/when needed.
