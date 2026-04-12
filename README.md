@@ -37,7 +37,23 @@ QMD-Chinese 是专为中文语境深度改造的本地 RAG (检索增强生成) 
 ## 🚀 模型下载与环境配置 (国内环境指南)
 
 **1. 设置镜像环境变量**
-在终端中执行以下命令（建议将其加入到 `~/.bashrc` 或 `~/.zshrc` 等配置文件中使其永久生效）：
+你可以任选下面两种方式，推荐普通用户优先使用 **`.env` 方式**，更简单，也不会影响其他项目。
+
+**方式 A：写入 `.env` 文件（推荐）**
+QMD 会自动读取以下位置的 `.env` 配置文件，你任选一个写入即可：
+
+```bash
+# 方式 1：写入 QMD 配置目录
+mkdir -p ~/.config/qmd
+printf 'HF_ENDPOINT=https://hf-mirror.com\n' >> ~/.config/qmd/.env
+
+# 方式 2：如果你在 OpenClaw 环境中使用，也可以写这里
+printf 'HF_ENDPOINT=https://hf-mirror.com\n' >> ~/.openclaw/.env
+```
+
+**方式 B：设置 shell 环境变量**
+如果你希望所有终端会话都默认生效，也可以将下面这行加入 `~/.bashrc` 或 `~/.zshrc`：
+
 ```bash
 export HF_ENDPOINT=https://hf-mirror.com
 ```
