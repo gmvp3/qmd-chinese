@@ -225,6 +225,89 @@ export function findBestCutoff(
   return bestPos;
 }
 
+// =============================================================================
+// Chunk Strategy
+// =============================================================================
+
+export type ChunkStrategy = "auto" | "regex";
+
+/**
+ * Merge two sets of break points (e.g. regex + AST), keeping the highest
+ * score at each position. Result is sorted by position.
+ */
+export function mergeBreakPoints(a: BreakPoint[], b: BreakPoint[]): BreakPoint[] {
+  const seen = new Map<number, BreakPoint>();
+  for (const bp of a) {
+    const existing = seen.get(bp.pos);
+    if (!existing || bp.score > existing.score) {
+      seen.set(bp.pos, bp);
+    }
+  }
+  for (const bp of b) {
+    const existing = seen.get(bp.pos);
+    if (!existing || bp.score > existing.score) {
+      seen.set(bp.pos, bp);
+    }
+  }
+  return Array.from(seen.values()).sort((a, b) => a.pos - b.pos);
+}
+
+/**
+ * Core chunk algorithm that operates on precomputed break points and code fences.
+ * This is the shared implementation used by both regex-only and AST-aware chunking.
+ */
+export function chunkDocumentWithBreakPoints(
+  content: string,
+  breakPoints: BreakPoint[],
+  codeFences: CodeFenceRegion[],
+  maxChars: number = CHUNK_SIZE_CHARS,
+  overlapChars: number = CHUNK_OVERLAP_CHARS,
+  windowChars: number = CHUNK_WINDOW_CHARS
+): { text: string; pos: number }[] {
+  if (content.length <= maxChars) {
+    return [{ text: content, pos: 0 }];
+  }
+
+  const chunks: { text: string; pos: number }[] = [];
+  let charPos = 0;
+
+  while (charPos < content.length) {
+    const targetEndPos = Math.min(charPos + maxChars, content.length);
+    let endPos = targetEndPos;
+
+    if (endPos < content.length) {
+      const bestCutoff = findBestCutoff(
+        breakPoints,
+        targetEndPos,
+        windowChars,
+        0.7,
+        codeFences
+      );
+
+      if (bestCutoff > charPos && bestCutoff <= targetEndPos) {
+        endPos = bestCutoff;
+      }
+    }
+
+    if (endPos <= charPos) {
+      endPos = Math.min(charPos + maxChars, content.length);
+    }
+
+    chunks.push({ text: content.slice(charPos, endPos), pos: charPos });
+
+    if (endPos >= content.length) {
+      break;
+    }
+    charPos = endPos - overlapChars;
+    const lastChunkPos = chunks.at(-1)!.pos;
+    if (charPos <= lastChunkPos) {
+      charPos = endPos;
+    }
+  }
+
+  return chunks;
+}
+
 // Hybrid query: strong BM25 signal detection thresholds
 // Skip expensive LLM expansion when top result is strong AND clearly separated from runner-up
 export const STRONG_SIGNAL_MIN_SCORE = 0.85;
@@ -439,6 +522,11 @@ let _productionMode = false;
 
 export function enableProductionMode(): void {
   _productionMode = true;
+}
+
+/** Reset production mode flag — only for testing. */
+export function _resetProductionModeForTesting(): void {
+  _productionMode = false;
 }
 
 export function getDefaultDbPath(indexName: string = "index"): string {
@@ -999,7 +1087,12 @@ function ensureVecTableInternal(db: Database, dimensions: number): void {
     const hasCosine = tableInfo.sql.includes('distance_metric=cosine');
     const existingDims = match?.[1] ? parseInt(match[1], 10) : null;
     if (existingDims === dimensions && hasHashSeq && hasCosine) return;
-    // Table exists but wrong schema - need to rebuild
+    if (existingDims !== null && existingDims !== dimensions) {
+      throw new Error(
+        `Embedding dimension mismatch: existing vectors are ${existingDims}d but the current model produces ${dimensions}d. ` +
+        `Run 'qmd embed -f' to re-embed with the new model.`
+      );
+    }
     db.exec("DROP TABLE IF EXISTS vectors_vec");
   }
   db.exec(`CREATE VIRTUAL TABLE vectors_vec USING vec0(hash_seq TEXT PRIMARY KEY, embedding float[${dimensions}] distance_metric=cosine)`);
@@ -1226,6 +1319,7 @@ export type EmbedOptions = {
   model?: string;
   maxDocsPerBatch?: number;
   maxBatchBytes?: number;
+  chunkStrategy?: ChunkStrategy;
   onProgress?: (info: EmbedProgress) => void;
 };
 
@@ -1354,6 +1448,7 @@ export async function generateEmbeddings(
 
   // Use store's LlamaCpp or global singleton, wrapped in a session
   const llm = getLlm(store);
+  const embedModelUri = llm.embedModelName;
 
   // Create a session manager for this llm instance
   const result = await withLLMSessionForLlm(llm, async (session) => {
@@ -1366,6 +1461,12 @@ export async function generateEmbeddings(
     const batches = buildEmbeddingBatches(docsToEmbed, maxDocsPerBatch, maxBatchBytes);
 
     for (const batchMeta of batches) {
+      // Abort early if session has been invalidated
+      if (!session.isValid) {
+        console.warn(`⚠ Session expired — skipping remaining document batches`);
+        break;
+      }
+
       const batchDocs = getEmbeddingDocsForBatch(db, batchMeta);
       const batchChunks: ChunkItem[] = [];
       const batchBytes = batchMeta.reduce((sum, doc) => sum + Math.max(0, doc.bytes), 0);
@@ -1374,7 +1475,13 @@ export async function generateEmbeddings(
         if (!doc.body.trim()) continue;
 
         const title = extractTitle(doc.body, doc.path);
-        const chunks = await chunkDocumentByTokens(doc.body);
+        const chunks = await chunkDocumentByTokens(
+          doc.body,
+          undefined, undefined, undefined,
+          doc.path,
+          options?.chunkStrategy,
+          session.signal,
+        );
 
         for (let seq = 0; seq < chunks.length; seq++) {
           batchChunks.push({
@@ -1399,8 +1506,8 @@ export async function generateEmbeddings(
 
       if (!vectorTableInitialized) {
         const firstChunk = batchChunks[0]!;
-        const firstText = formatDocForEmbedding(firstChunk.text, firstChunk.title);
-        const firstResult = await session.embed(firstText);
+        const firstText = formatDocForEmbedding(firstChunk.text, firstChunk.title, embedModelUri);
+        const firstResult = await session.embed(firstText, { model });
         if (!firstResult) {
           throw new Error("Failed to get embedding dimensions from first chunk");
         }
@@ -1412,12 +1519,29 @@ export async function generateEmbeddings(
       let batchChunkBytesProcessed = 0;
 
       for (let batchStart = 0; batchStart < batchChunks.length; batchStart += BATCH_SIZE) {
+        // Abort early if session has been invalidated (e.g. max duration exceeded)
+        if (!session.isValid) {
+          const remaining = batchChunks.length - batchStart;
+          errors += remaining;
+          console.warn(`⚠ Session expired — skipping ${remaining} remaining chunks`);
+          break;
+        }
+
+        // Abort early if error rate is too high (>80% of processed chunks failed)
+        const processed = chunksEmbedded + errors;
+        if (processed >= BATCH_SIZE && errors > processed * 0.8) {
+          const remaining = batchChunks.length - batchStart;
+          errors += remaining;
+          console.warn(`⚠ Error rate too high (${errors}/${processed}) — aborting embedding`);
+          break;
+        }
+
         const batchEnd = Math.min(batchStart + BATCH_SIZE, batchChunks.length);
         const chunkBatch = batchChunks.slice(batchStart, batchEnd);
-        const texts = chunkBatch.map(chunk => formatDocForEmbedding(chunk.text, chunk.title));
+        const texts = chunkBatch.map(chunk => formatDocForEmbedding(chunk.text, chunk.title, embedModelUri));
 
         try {
-          const embeddings = await session.embedBatch(texts);
+          const embeddings = await session.embedBatch(texts, { model });
           for (let i = 0; i < chunkBatch.length; i++) {
             const chunk = chunkBatch[i]!;
             const embedding = embeddings[i];
@@ -1431,20 +1555,26 @@ export async function generateEmbeddings(
           }
         } catch {
           // Batch failed — try individual embeddings as fallback
-          for (const chunk of chunkBatch) {
-            try {
-              const text = formatDocForEmbedding(chunk.text, chunk.title);
-              const result = await session.embed(text);
-              if (result) {
-                insertEmbedding(db, chunk.hash, chunk.seq, chunk.pos, new Float32Array(result.embedding), model, now);
-                chunksEmbedded++;
-              } else {
+          // But skip if session is already invalid (avoids N doomed retries)
+          if (!session.isValid) {
+            errors += chunkBatch.length;
+            batchChunkBytesProcessed += chunkBatch.reduce((sum, c) => sum + c.bytes, 0);
+          } else {
+            for (const chunk of chunkBatch) {
+              try {
+                const text = formatDocForEmbedding(chunk.text, chunk.title, embedModelUri);
+                const result = await session.embed(text, { model });
+                if (result) {
+                  insertEmbedding(db, chunk.hash, chunk.seq, chunk.pos, new Float32Array(result.embedding), model, now);
+                  chunksEmbedded++;
+                } else {
+                  errors++;
+                }
+              } catch {
                 errors++;
               }
-            } catch {
-              errors++;
+              batchChunkBytesProcessed += chunk.bytes;
             }
-            batchChunkBytesProcessed += chunk.bytes;
           }
         }
 
@@ -1639,7 +1769,7 @@ export function handelize(path: string): string {
         const nameWithoutExt = ext ? segment.slice(0, -ext.length) : segment;
 
         const cleanedName = nameWithoutExt
-          .replace(/[^\p{L}\p{N}$]+/gu, '-')  // Keep route marker "$", dash-separate other chars
+          .replace(/[^\p{L}\p{N}$]+/gu, '-')  // Keep letters, numbers, "$"; dash-separate rest (including dots)
           .replace(/^-+|-+$/g, ''); // Remove leading/trailing dashes
 
         return cleanedName + ext;
@@ -2067,78 +2197,67 @@ function segmentZh(text: string): string {
 
 export { formatQueryForEmbedding, formatDocForEmbedding };
 
+/**
+ * Chunk a document using regex-only break point detection.
+ * This is the sync, backward-compatible API used by tests and legacy callers.
+ */
 export function chunkDocument(
   content: string,
   maxChars: number = CHUNK_SIZE_CHARS,
   overlapChars: number = CHUNK_OVERLAP_CHARS,
   windowChars: number = CHUNK_WINDOW_CHARS
 ): { text: string; pos: number }[] {
-  if (content.length <= maxChars) {
-    return [{ text: content, pos: 0 }];
-  }
-
-  // Pre-scan all break points and code fences once
   const breakPoints = scanBreakPoints(content);
   const codeFences = findCodeFences(content);
+  return chunkDocumentWithBreakPoints(content, breakPoints, codeFences, maxChars, overlapChars, windowChars);
+}
 
-  const chunks: { text: string; pos: number }[] = [];
-  let charPos = 0;
+/**
+ * Async AST-aware chunking. Detects language from filepath, computes AST
+ * break points for supported code files, merges with regex break points,
+ * and delegates to the shared chunk algorithm.
+ *
+ * Falls back to regex-only when strategy is "regex", filepath is absent,
+ * or language is unsupported.
+ */
+export async function chunkDocumentAsync(
+  content: string,
+  maxChars: number = CHUNK_SIZE_CHARS,
+  overlapChars: number = CHUNK_OVERLAP_CHARS,
+  windowChars: number = CHUNK_WINDOW_CHARS,
+  filepath?: string,
+  chunkStrategy: ChunkStrategy = "regex",
+): Promise<{ text: string; pos: number }[]> {
+  const regexPoints = scanBreakPoints(content);
+  const codeFences = findCodeFences(content);
 
-  while (charPos < content.length) {
-    // Calculate target end position for this chunk
-    const targetEndPos = Math.min(charPos + maxChars, content.length);
-
-    let endPos = targetEndPos;
-
-    // If not at the end, find the best break point
-    if (endPos < content.length) {
-      // Find best cutoff using scored algorithm
-      const bestCutoff = findBestCutoff(
-        breakPoints,
-        targetEndPos,
-        windowChars,
-        0.7,
-        codeFences
-      );
-
-      // Only use the cutoff if it's within our current chunk
-      if (bestCutoff > charPos && bestCutoff <= targetEndPos) {
-        endPos = bestCutoff;
-      }
-    }
-
-    // Ensure we make progress
-    if (endPos <= charPos) {
-      endPos = Math.min(charPos + maxChars, content.length);
-    }
-
-    chunks.push({ text: content.slice(charPos, endPos), pos: charPos });
-
-    // Move forward, but overlap with previous chunk
-    // For last chunk, don't overlap (just go to the end)
-    if (endPos >= content.length) {
-      break;
-    }
-    charPos = endPos - overlapChars;
-    const lastChunkPos = chunks.at(-1)!.pos;
-    if (charPos <= lastChunkPos) {
-      // Prevent infinite loop - move forward at least a bit
-      charPos = endPos;
+  let breakPoints = regexPoints;
+  if (chunkStrategy === "auto" && filepath) {
+    const { getASTBreakPoints } = await import("./ast.js");
+    const astPoints = await getASTBreakPoints(content, filepath);
+    if (astPoints.length > 0) {
+      breakPoints = mergeBreakPoints(regexPoints, astPoints);
     }
   }
 
-  return chunks;
+  return chunkDocumentWithBreakPoints(content, breakPoints, codeFences, maxChars, overlapChars, windowChars);
 }
 
 /**
  * Chunk a document by actual token count using the LLM tokenizer.
  * More accurate than character-based chunking but requires async.
+ *
+ * When filepath and chunkStrategy are provided, uses AST-aware break points
+ * for supported code files.
  */
 export async function chunkDocumentByTokens(
   content: string,
   maxTokens: number = CHUNK_SIZE_TOKENS,
   overlapTokens: number = CHUNK_OVERLAP_TOKENS,
-  windowTokens: number = CHUNK_WINDOW_TOKENS
+  windowTokens: number = CHUNK_WINDOW_TOKENS,
+  filepath?: string,
+  chunkStrategy: ChunkStrategy = "regex",
+  signal?: AbortSignal
 ): Promise<{ text: string; pos: number; tokens: number }[]> {
   const llm = getDefaultLlamaCpp();
 
@@ -2150,12 +2269,16 @@ export async function chunkDocumentByTokens(
   const windowChars = windowTokens * avgCharsPerToken;
 
   // Chunk in character space with conservative estimate
-  let charChunks = chunkDocument(content, maxChars, overlapChars, windowChars);
+  // Use AST-aware chunking for the first pass when filepath/strategy provided
+  let charChunks = await chunkDocumentAsync(content, maxChars, overlapChars, windowChars, filepath, chunkStrategy);
 
   // Tokenize and split any chunks that still exceed limit
   const results: { text: string; pos: number; tokens: number }[] = [];
 
   for (const chunk of charChunks) {
+    // Respect abort signal to avoid runaway tokenization
+    if (signal?.aborted) break;
+
     const tokens = await llm.tokenize(chunk.text);
 
     if (tokens.length <= maxTokens) {
@@ -2169,6 +2292,7 @@ export async function chunkDocumentByTokens(
       const subChunks = chunkDocument(chunk.text, safeMaxChars, Math.floor(overlapChars * actualCharsPerToken / 2), Math.floor(windowChars * actualCharsPerToken / 2));
 
       for (const subChunk of subChunks) {
+        if (signal?.aborted) break;
         const subTokens = await llm.tokenize(subChunk.text);
         results.push({
           text: subChunk.text,
@@ -2291,7 +2415,7 @@ export function matchFilesByGlob(db: Database, pattern: string): { filepath: str
 
   const isMatch = picomatch(pattern);
   return allFiles
-    .filter(f => isMatch(f.virtual_path) || isMatch(f.path))
+    .filter(f => isMatch(f.virtual_path) || isMatch(f.path) || isMatch(f.collection + '/' + f.path))
     .map(f => ({
       filepath: f.virtual_path,  // Virtual path for precise lookup
       displayPath: f.path,        // Relative path for display
@@ -2696,8 +2820,25 @@ export function getTopLevelPathsWithoutContext(db: Database, collectionName: str
 // FTS Search
 // =============================================================================
 
-function sanitizeFTS5Term(term: string): string {
-  return term.replace(/[^\p{L}\p{N}']/gu, '').toLowerCase();
+export function sanitizeFTS5Term(term: string): string {
+  return term.replace(/[^\p{L}\p{N}'_]/gu, '').toLowerCase();
+}
+
+/**
+ * Check if a token is a hyphenated compound word (e.g., multi-agent, DEC-0054, gpt-4).
+ * Returns true if the token contains internal hyphens between word/digit characters.
+ */
+function isHyphenatedToken(token: string): boolean {
+  return /^[\p{L}\p{N}][\p{L}\p{N}'-]*-[\p{L}\p{N}][\p{L}\p{N}'-]*$/u.test(token);
+}
+
+/**
+ * Sanitize a hyphenated term into an FTS5 phrase by splitting on hyphens
+ * and sanitizing each part. Returns the parts joined by spaces for use
+ * inside FTS5 quotes: "multi agent" matches "multi-agent" in porter tokenizer.
+ */
+function sanitizeHyphenatedTerm(term: string): string {
+  return term.split('-').map(t => sanitizeFTS5Term(t)).filter(t => t).join(' ');
 }
 
 /**
@@ -2706,14 +2847,23 @@ function sanitizeFTS5Term(term: string): string {
  * Supports:
  * - Quoted phrases: "exact phrase" → "exact phrase" (exact match)
  * - Negation: -term or -"phrase" → uses FTS5 NOT operator
+ * - Hyphenated tokens: multi-agent, DEC-0054, gpt-4 → treated as phrases
  * - Plain terms: term → "term"* (prefix match)
  *
  * FTS5 NOT is a binary operator: `term1 NOT term2` means "match term1 but not term2".
  * So `-term` only works when there are also positive terms.
  *
+ * Hyphen disambiguation: `-sports` at a word boundary is negation, but `multi-agent`
+ * (where `-` is between word characters) is treated as a hyphenated phrase.
+ * When a leading `-` is followed by what looks like a hyphenated compound word
+ * (e.g., `-multi-agent`), the entire token is treated as a negated phrase.
+ *
  * Examples:
  *   performance -sports     → "performance"* NOT "sports"*
  *   "machine learning"      → "machine learning"
+ *   multi-agent memory      → "multi agent" AND "memory"*
+ *   DEC-0054               → "dec 0054"
+ *   -multi-agent            → NOT "multi agent"
  */
 function buildFTS5Query(query: string): string | null {
   const positive: string[] = [];
@@ -2755,9 +2905,23 @@ function buildFTS5Query(query: string): string | null {
       const start = i;
       while (i < s.length && !/[\s"]/.test(s[i]!)) i++;
       const term = s.slice(start, i);
+
       const segmented = segmentZh(term);
       const terms = segmented.split(/\s+/).filter(t => t);
       for (const t of terms) {
+        if (isHyphenatedToken(t)) {
+          const sanitized = sanitizeHyphenatedTerm(t);
+          if (sanitized) {
+            const ftsPhrase = `"${sanitized}"`;
+            if (negated) {
+              negative.push(ftsPhrase);
+            } else {
+              positive.push(ftsPhrase);
+            }
+          }
+          continue;
+        }
+
         const sanitized = sanitizeFTS5Term(t);
         if (sanitized) {
           const ftsTerm = `"${sanitized}"*`;  // Prefix match
@@ -2814,20 +2978,38 @@ export function searchFTS(db: Database, query: string, limit: number = 20, colle
   const ftsQuery = buildFTS5Query(query);
   if (!ftsQuery) return [];
 
+  // Use a CTE to force FTS5 to run first, then filter by collection.
+  // Without the CTE, SQLite's query planner combines FTS5 MATCH with the
+  // collection filter in a single WHERE clause, which can cause it to
+  // abandon the FTS5 index and fall back to a full scan — turning an 8ms
+  // query into a 17-second query on large collections.
+  const params: (string | number)[] = [ftsQuery];
+
+  // When filtering by collection, fetch extra candidates from the FTS index
+  // since some will be filtered out. Without a collection filter we can
+  // fetch exactly the requested limit.
+  const ftsLimit = collectionName ? limit * 10 : limit;
+
   let sql = `
+    WITH fts_matches AS (
+      SELECT rowid, bm25(documents_fts, 1.5, 4.0, 1.0) as bm25_score
+      FROM documents_fts
+      WHERE documents_fts MATCH ?
+      ORDER BY bm25_score ASC
+      LIMIT ${ftsLimit}
+    )
     SELECT
       'qmd://' || d.collection || '/' || d.path as filepath,
       d.collection || '/' || d.path as display_path,
       d.title,
       content.doc as body,
       d.hash,
-      bm25(documents_fts, 10.0, 1.0) as bm25_score
-    FROM documents_fts f
-    JOIN documents d ON d.id = f.rowid
+      fm.bm25_score
+    FROM fts_matches fm
+    JOIN documents d ON d.id = fm.rowid
     JOIN content ON content.hash = d.hash
-    WHERE documents_fts MATCH ? AND d.active = 1
+    WHERE d.active = 1
   `;
-  const params: (string | number)[] = [ftsQuery];
 
   if (collectionName) {
     sql += ` AND d.collection = ?`;
@@ -2835,7 +3017,7 @@ export function searchFTS(db: Database, query: string, limit: number = 20, colle
   }
 
   // bm25 lower is better; sort ascending.
-  sql += ` ORDER BY bm25_score ASC LIMIT ?`;
+  sql += ` ORDER BY fm.bm25_score ASC LIMIT ?`;
   params.push(limit);
 
   const rows = db.prepare(sql).all(...params) as { filepath: string; display_path: string; title: string; body: string; hash: string; bm25_score: number }[];
@@ -2993,6 +3175,12 @@ export function clearAllEmbeddings(db: Database): void {
 /**
  * Insert a single embedding into both content_vectors and vectors_vec tables.
  * The hash_seq key is formatted as "hash_seq" for the vectors_vec table.
+ *
+ * content_vectors is inserted first so that getHashesForEmbedding (which checks
+ * only content_vectors) won't re-select the hash on a crash between the two inserts.
+ *
+ * vectors_vec uses DELETE + INSERT instead of INSERT OR REPLACE because sqlite-vec's
+ * vec0 virtual tables silently ignore the OR REPLACE conflict clause.
  */
 export function insertEmbedding(
   db: Database,
@@ -3004,11 +3192,16 @@ export function insertEmbedding(
   embeddedAt: string
 ): void {
   const hashSeq = `${hash}_${seq}`;
-  const insertVecStmt = db.prepare(`INSERT OR REPLACE INTO vectors_vec (hash_seq, embedding) VALUES (?, ?)`);
-  const insertContentVectorStmt = db.prepare(`INSERT OR REPLACE INTO content_vectors (hash, seq, pos, model, embedded_at) VALUES (?, ?, ?, ?, ?)`);
 
-  insertVecStmt.run(hashSeq, embedding);
+  // Insert content_vectors first — crash-safe ordering (see getHashesForEmbedding)
+  const insertContentVectorStmt = db.prepare(`INSERT OR REPLACE INTO content_vectors (hash, seq, pos, model, embedded_at) VALUES (?, ?, ?, ?, ?)`);
   insertContentVectorStmt.run(hash, seq, pos, model, embeddedAt);
+
+  // vec0 virtual tables don't support OR REPLACE — use DELETE + INSERT
+  const deleteVecStmt = db.prepare(`DELETE FROM vectors_vec WHERE hash_seq = ?`);
+  const insertVecStmt = db.prepare(`INSERT INTO vectors_vec (hash_seq, embedding) VALUES (?, ?)`);
+  deleteVecStmt.run(hashSeq);
+  insertVecStmt.run(hashSeq, embedding);
 }
 
 // =============================================================================
@@ -3404,7 +3597,7 @@ export function findDocuments(
   pattern: string,
   options: { includeBody?: boolean; maxBytes?: number } = {}
 ): { docs: MultiGetResult[]; errors: string[] } {
-  const isCommaSeparated = pattern.includes(',') && !pattern.includes('*') && !pattern.includes('?');
+  const isCommaSeparated = pattern.includes(',') && !pattern.includes('*') && !pattern.includes('?') && !pattern.includes('{');
   const errors: string[] = [];
   const maxBytes = options.maxBytes ?? DEFAULT_MULTI_GET_MAX_BYTES;
 
@@ -3724,6 +3917,7 @@ export interface HybridQueryOptions {
   explain?: boolean;        // include backend/RRF/rerank score traces
   intent?: string;          // domain intent hint for disambiguation
   skipRerank?: boolean;     // skip LLM reranking, use only RRF scores
+  chunkStrategy?: ChunkStrategy;
   hooks?: SearchHooks;
 }
 
@@ -3847,7 +4041,7 @@ export async function hybridQuery(
 
     // Batch embed all vector queries in a single call
     const llm = getLlm(store);
-    const textsToEmbed = vecQueries.map(q => formatQueryForEmbedding(q.text));
+    const textsToEmbed = vecQueries.map(q => formatQueryForEmbedding(q.text, llm.embedModelName));
     hooks?.onEmbedStart?.(textsToEmbed.length);
     const embedStart = Date.now();
     const embeddings = await llm.embedBatch(textsToEmbed);
@@ -3895,8 +4089,9 @@ export async function hybridQuery(
   const intentTerms = intent ? extractIntentTerms(intent) : [];
   const docChunkMap = new Map<string, { chunks: { text: string; pos: number }[]; bestIdx: number }>();
 
+  const chunkStrategy = options?.chunkStrategy;
   for (const cand of candidates) {
-    const chunks = chunkDocument(cand.body);
+    const chunks = await chunkDocumentAsync(cand.body, undefined, undefined, undefined, cand.file, chunkStrategy);
     if (chunks.length === 0) continue;
 
     // Pick chunk with most keyword overlap (fallback: first chunk)
@@ -4136,6 +4331,7 @@ export interface StructuredSearchOptions {
   intent?: string;
   /** Skip LLM reranking, use only RRF scores */
   skipRerank?: boolean;
+  chunkStrategy?: ChunkStrategy;
   hooks?: SearchHooks;
 }
 
@@ -4232,7 +4428,7 @@ export async function structuredSearch(
     );
     if (vecSearches.length > 0) {
       const llm = getLlm(store);
-      const textsToEmbed = vecSearches.map(s => formatQueryForEmbedding(s.query));
+      const textsToEmbed = vecSearches.map(s => formatQueryForEmbedding(s.query, llm.embedModelName));
       hooks?.onEmbedStart?.(textsToEmbed.length);
       const embedStart = Date.now();
       const embeddings = await llm.embedBatch(textsToEmbed);
@@ -4284,9 +4480,10 @@ export async function structuredSearch(
   const queryTerms = primaryQuery.toLowerCase().split(/\s+/).filter(t => t.length > 2);
   const intentTerms = intent ? extractIntentTerms(intent) : [];
   const docChunkMap = new Map<string, { chunks: { text: string; pos: number }[]; bestIdx: number }>();
+  const ssChunkStrategy = options?.chunkStrategy;
 
   for (const cand of candidates) {
-    const chunks = chunkDocument(cand.body);
+    const chunks = await chunkDocumentAsync(cand.body, undefined, undefined, undefined, cand.file, ssChunkStrategy);
     if (chunks.length === 0) continue;
 
     // Pick chunk with most keyword overlap

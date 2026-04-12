@@ -30,7 +30,19 @@ jobs:
           LD_LIBRARY_PATH: /usr/lib/x86_64-linux-gnu
 
       - run: npm run build
-      - run: npm publish --provenance --access public
+
+      - name: Determine release channel
+        id: channel
+        run: |
+          if [[ "${GITHUB_REF_NAME}" == *-* ]]; then
+            echo "npm_tag=beta" >> "$GITHUB_OUTPUT"
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "npm_tag=latest" >> "$GITHUB_OUTPUT"
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - run: npm publish --provenance --access public --tag "${{ steps.channel.outputs.npm_tag }}"
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
@@ -44,8 +56,15 @@ jobs:
 
       - name: Create GitHub release
         run: |
-          gh release create "$GITHUB_REF_NAME" \
-            --title "$GITHUB_REF_NAME" \
-            --notes-file /tmp/release-notes.md
+          if [[ "${{ steps.channel.outputs.prerelease }}" == "true" ]]; then
+            gh release create "$GITHUB_REF_NAME" \
+              --title "$GITHUB_REF_NAME" \
+              --prerelease \
+              --notes-file /tmp/release-notes.md
+          else
+            gh release create "$GITHUB_REF_NAME" \
+              --title "$GITHUB_REF_NAME" \
+              --notes-file /tmp/release-notes.md
+          fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

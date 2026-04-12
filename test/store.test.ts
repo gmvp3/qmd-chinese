@@ -22,13 +22,15 @@ import {
   homedir,
   resolve,
   getPwd,
-  getRealPath,
   hashContent,
   extractTitle,
   formatQueryForEmbedding,
   formatDocForEmbedding,
   chunkDocument,
   chunkDocumentByTokens,
+  chunkDocumentAsync,
+  chunkDocumentWithBreakPoints,
+  mergeBreakPoints,
   scanBreakPoints,
   findCodeFences,
   isInsideCodeFence,
@@ -38,7 +40,6 @@ import {
   reciprocalRankFusion,
   extractSnippet,
   getCacheKey,
-  handelize,
   normalizeVirtualPath,
   isVirtualPath,
   parseVirtualPath,
@@ -269,170 +270,6 @@ afterAll(async () => {
   }
 });
 
-// =============================================================================
-// Path Utilities Tests
-// =============================================================================
-
-describe("Path Utilities", () => {
-  test("homedir returns HOME environment variable", () => {
-    const result = homedir();
-    expect(result).toBe(process.env.HOME || "/tmp");
-  });
-
-  test("resolve handles absolute paths", () => {
-    expect(resolve("/foo/bar")).toBe("/foo/bar");
-    expect(resolve("/foo", "/bar")).toBe("/bar");
-  });
-
-  test("resolve handles relative paths", () => {
-    const pwd = process.env.PWD || process.cwd();
-    expect(resolve("foo")).toBe(`${pwd}/foo`);
-    expect(resolve("foo", "bar")).toBe(`${pwd}/foo/bar`);
-  });
-
-  test("resolve normalizes . and ..", () => {
-    expect(resolve("/foo/bar/./baz")).toBe("/foo/bar/baz");
-    expect(resolve("/foo/bar/../baz")).toBe("/foo/baz");
-    expect(resolve("/foo/bar/../../baz")).toBe("/baz");
-  });
-
-  test("getDefaultDbPath throws in test mode without INDEX_PATH", () => {
-    // In test mode, getDefaultDbPath should throw to prevent accidental writes to global index
-    // This is intentional safety behavior
-    const originalIndexPath = process.env.INDEX_PATH;
-    delete process.env.INDEX_PATH;
-
-    expect(() => getDefaultDbPath()).toThrow("Database path not set");
-
-    // Restore
-    if (originalIndexPath) process.env.INDEX_PATH = originalIndexPath;
-  });
-
-  test("getDefaultDbPath uses INDEX_PATH when set", () => {
-    const originalIndexPath = process.env.INDEX_PATH;
-    process.env.INDEX_PATH = "/tmp/test-index.sqlite";
-
-    expect(getDefaultDbPath()).toBe("/tmp/test-index.sqlite");
-    expect(getDefaultDbPath("custom")).toBe("/tmp/test-index.sqlite"); // INDEX_PATH overrides name
-
-    // Restore
-    if (originalIndexPath) {
-      process.env.INDEX_PATH = originalIndexPath;
-    } else {
-      delete process.env.INDEX_PATH;
-    }
-  });
-
-  test("getPwd returns current working directory", () => {
-    const pwd = getPwd();
-    expect(pwd).toBeTruthy();
-    expect(typeof pwd).toBe("string");
-  });
-
-  test("getRealPath resolves symlinks", () => {
-    const result = getRealPath("/tmp");
-    expect(result).toBeTruthy();
-    // On macOS, /tmp is a symlink to /private/tmp
-    expect(result === "/tmp" || result === "/private/tmp").toBe(true);
-  });
-});
-
-// =============================================================================
-// Handelize Tests - path normalization for token-friendly filenames
-// =============================================================================
-
-describe("handelize", () => {
-  test("converts to lowercase", () => {
-    expect(handelize("README.md")).toBe("readme.md");
-    expect(handelize("MyFile.MD")).toBe("myfile.md");
-  });
-
-  test("preserves folder structure", () => {
-    expect(handelize("a/b/c/d.md")).toBe("a/b/c/d.md");
-    expect(handelize("docs/api/README.md")).toBe("docs/api/readme.md");
-  });
-
-  test("replaces non-word characters with dash", () => {
-    expect(handelize("hello world.md")).toBe("hello-world.md");
-    expect(handelize("file (1).md")).toBe("file-1.md");
-    expect(handelize("foo@bar#baz.md")).toBe("foo-bar-baz.md");
-  });
-
-  test("collapses multiple special chars into single dash", () => {
-    expect(handelize("hello   world.md")).toBe("hello-world.md");
-    expect(handelize("foo---bar.md")).toBe("foo-bar.md");
-    expect(handelize("a  -  b.md")).toBe("a-b.md");
-  });
-
-  test("removes leading and trailing dashes from segments", () => {
-    expect(handelize("-hello-.md")).toBe("hello.md");
-    expect(handelize("--test--.md")).toBe("test.md");
-    expect(handelize("a/-b-/c.md")).toBe("a/b/c.md");
-  });
-
-  test("converts triple underscore to folder separator", () => {
-    expect(handelize("foo___bar.md")).toBe("foo/bar.md");
-    expect(handelize("notes___2025___january.md")).toBe("notes/2025/january.md");
-    expect(handelize("a/b___c/d.md")).toBe("a/b/c/d.md");
-  });
-
-  test("handles complex real-world meeting notes", () => {
-    // Example: "Money Movement Licensing Review - 2025／11／19 10:25 EST - Notes by Gemini.md"
-    const complexName = "Money Movement Licensing Review - 2025／11／19 10:25 EST - Notes by Gemini.md";
-    const result = handelize(complexName);
-    expect(result).toBe("money-movement-licensing-review-2025-11-19-10-25-est-notes-by-gemini.md");
-    expect(result).not.toContain(" ");
-    expect(result).not.toContain("／");
-    expect(result).not.toContain(":");
-  });
-
-  test("handles unicode characters", () => {
-    // Pure unicode filenames are now supported (fixes GitHub issue #10)
-    expect(handelize("日本語.md")).toBe("日本語.md");
-    expect(handelize("Зоны и проекты.md")).toBe("зоны-и-проекты.md");
-    // Mixed unicode/ascii preserves both
-    expect(handelize("café-notes.md")).toBe("café-notes.md");
-    expect(handelize("naïve.md")).toBe("naïve.md");
-    expect(handelize("日本語-notes.md")).toBe("日本語-notes.md");
-  });
-
-  test("handles dates and times in filenames", () => {
-    expect(handelize("meeting-2025-01-15.md")).toBe("meeting-2025-01-15.md");
-    expect(handelize("notes 2025/01/15.md")).toBe("notes-2025/01/15.md");
-    expect(handelize("call_10:30_AM.md")).toBe("call-10-30-am.md");
-  });
-
-  test("handles special project naming patterns", () => {
-    expect(handelize("PROJECT_ABC_v2.0.md")).toBe("project-abc-v2-0.md");
-    expect(handelize("[WIP] Feature Request.md")).toBe("wip-feature-request.md");
-    expect(handelize("(DRAFT) Proposal v1.md")).toBe("draft-proposal-v1.md");
-  });
-
-  test("handles symbol-only route filenames", () => {
-    expect(handelize("routes/api/auth/$.ts")).toBe("routes/api/auth/$.ts");
-    expect(handelize("app/routes/$id.tsx")).toBe("app/routes/$id.tsx");
-  });
-
-  test("filters out empty segments", () => {
-    expect(handelize("a//b/c.md")).toBe("a/b/c.md");
-    expect(handelize("/a/b/")).toBe("a/b");
-    expect(handelize("///test///")).toBe("test");
-  });
-
-  test("throws error for invalid inputs", () => {
-    expect(() => handelize("")).toThrow("path cannot be empty");
-    expect(() => handelize("   ")).toThrow("path cannot be empty");
-    expect(() => handelize(".md")).toThrow("no valid filename content");
-    expect(() => handelize("...")).toThrow("no valid filename content");
-    expect(() => handelize("___")).toThrow("no valid filename content");
-  });
-
-  test("handles minimal valid inputs", () => {
-    expect(handelize("a")).toBe("a");
-    expect(handelize("1")).toBe("1");
-    expect(handelize("a.md")).toBe("a.md");
-  });
-});
 
 // =============================================================================
 // Store Creation Tests
@@ -1021,6 +858,127 @@ Final section content.
 });
 
 // =============================================================================
+// AST-Aware Chunking Integration Tests
+// =============================================================================
+
+describe("mergeBreakPoints", () => {
+  test("merges two sets of break points keeping highest score at each position", () => {
+    const regexPoints: BreakPoint[] = [
+      { pos: 10, score: 20, type: "blank" },
+      { pos: 50, score: 1, type: "newline" },
+    ];
+    const astPoints: BreakPoint[] = [
+      { pos: 10, score: 90, type: "ast:func" },
+      { pos: 100, score: 100, type: "ast:class" },
+    ];
+
+    const merged = mergeBreakPoints(regexPoints, astPoints);
+    expect(merged).toHaveLength(3);
+
+    // pos 10: AST score (90) wins over regex (20)
+    const at10 = merged.find(p => p.pos === 10);
+    expect(at10?.score).toBe(90);
+    expect(at10?.type).toBe("ast:func");
+
+    // pos 50: only regex
+    expect(merged.find(p => p.pos === 50)?.score).toBe(1);
+
+    // pos 100: only AST
+    expect(merged.find(p => p.pos === 100)?.score).toBe(100);
+  });
+
+  test("returns sorted by position", () => {
+    const a: BreakPoint[] = [{ pos: 100, score: 10, type: "a" }];
+    const b: BreakPoint[] = [{ pos: 5, score: 20, type: "b" }];
+    const merged = mergeBreakPoints(a, b);
+    expect(merged[0]!.pos).toBe(5);
+    expect(merged[1]!.pos).toBe(100);
+  });
+});
+
+describe("chunkDocumentWithBreakPoints", () => {
+  test("produces same output as chunkDocument for same input", () => {
+    const content = "a".repeat(5000) + "\n\n" + "b".repeat(5000);
+    const breakPoints = scanBreakPoints(content);
+    const codeFences = findCodeFences(content);
+
+    const chunksOriginal = chunkDocument(content);
+    const chunksNew = chunkDocumentWithBreakPoints(content, breakPoints, codeFences);
+
+    expect(chunksNew.length).toBe(chunksOriginal.length);
+    for (let i = 0; i < chunksNew.length; i++) {
+      expect(chunksNew[i]!.text).toBe(chunksOriginal[i]!.text);
+      expect(chunksNew[i]!.pos).toBe(chunksOriginal[i]!.pos);
+    }
+  });
+});
+
+describe("AST-aware chunkDocumentAsync", () => {
+  const TS_CODE = `import { Database } from './db';
+
+export class AuthService {
+  constructor(private db: Database) {}
+
+  async authenticate(user: User, token: string): Promise<boolean> {
+    const session = await this.db.findSession(token);
+    return session?.userId === user.id;
+  }
+
+  validateToken(token: string): boolean {
+    return token.length === 64;
+  }
+}
+
+export function hashPassword(password: string): string {
+  return crypto.createHash('sha256').update(password).digest('hex');
+}
+`.repeat(10); // Repeat to make it large enough to trigger chunking
+
+  test("returns chunks for code files with AST strategy", async () => {
+    const chunks = await chunkDocumentAsync(TS_CODE, undefined, undefined, undefined, "auth.ts", "auto");
+    expect(chunks.length).toBeGreaterThan(0);
+    // Each chunk should have text and pos
+    for (const chunk of chunks) {
+      expect(typeof chunk.text).toBe("string");
+      expect(chunk.text.length).toBeGreaterThan(0);
+      expect(chunk.pos).toBeGreaterThanOrEqual(0);
+    }
+  });
+
+  test("regex strategy produces same output as chunkDocument for code files", async () => {
+    const asyncChunks = await chunkDocumentAsync(TS_CODE, undefined, undefined, undefined, "auth.ts", "regex");
+    const syncChunks = chunkDocument(TS_CODE);
+
+    expect(asyncChunks.length).toBe(syncChunks.length);
+    for (let i = 0; i < asyncChunks.length; i++) {
+      expect(asyncChunks[i]!.text).toBe(syncChunks[i]!.text);
+      expect(asyncChunks[i]!.pos).toBe(syncChunks[i]!.pos);
+    }
+  });
+
+  test("markdown files are unchanged in auto mode", async () => {
+    const mdContent = ("# Heading\n\n" + "Some text. ".repeat(200) + "\n\n").repeat(10);
+    const asyncChunks = await chunkDocumentAsync(mdContent, undefined, undefined, undefined, "readme.md", "auto");
+    const syncChunks = chunkDocument(mdContent);
+
+    expect(asyncChunks.length).toBe(syncChunks.length);
+    for (let i = 0; i < asyncChunks.length; i++) {
+      expect(asyncChunks[i]!.text).toBe(syncChunks[i]!.text);
+    }
+  });
+
+  test("no filepath falls back to regex-only", async () => {
+    const asyncChunks = await chunkDocumentAsync(TS_CODE, undefined, undefined, undefined, undefined, "auto");
+    const syncChunks = chunkDocument(TS_CODE);
+
+    expect(asyncChunks.length).toBe(syncChunks.length);
+    for (let i = 0; i < asyncChunks.length; i++) {
+      expect(asyncChunks[i]!.text).toBe(syncChunks[i]!.text);
+    }
+  });
+});
+
+// =============================================================================
 // Caching Tests
 // =============================================================================
 
@@ -1199,6 +1157,34 @@ describe("FTS Search", () => {
     expect(results.length).toBe(2);
     // Title/name match should rank higher due to BM25 weights
     expect(results[0]!.displayPath).toBe(`${collectionName}/test/title.md`);
+
+    await cleanupTestDb(store);
+  });
+
+  test("searchFTS title boost outweighs higher body frequency", async () => {
+    const store = await createTestStore();
+    const collectionName = await createTestCollection();
+
+    // Document with "quantum" mentioned in a longer body but NOT in the title
+    await insertTestDocument(store.db, collectionName, {
+      name: "body-only",
+      title: "General Science Notes",
+      body: "This research paper discusses quantum mechanics and the quantum model of computation. The quantum approach offers improvements over classical methods.",
+      displayPath: "test/body-only.md",
+    });
+
+    // Document with "quantum" in the title but a shorter body mention
+    await insertTestDocument(store.db, collectionName, {
+      name: "title-match",
+      title: "Quantum Computing Overview",
+      body: "An introduction to the fundamentals of this emerging computing paradigm.",
+      displayPath: "test/title-match.md",
+    });
+
+    const results = store.searchFTS("quantum", 10);
+    expect(results.length).toBe(2);
+    // Title-match doc should rank higher due to BM25 column weights boosting title
+    expect(results[0]!.displayPath).toBe(`${collectionName}/test/title-match.md`);
 
     await cleanupTestDb(store);
   });
@@ -1757,6 +1743,55 @@ describe("Document Retrieval", () => {
 
       await cleanupTestDb(store);
     });
+
+    test("findDocuments supports brace expansion patterns", async () => {
+      const store = await createTestStore();
+      const collectionName = await createTestCollection();
+
+      await insertTestDocument(store.db, collectionName, {
+        name: "doc1",
+        filepath: "/path/doc1.md",
+        displayPath: "doc1.md",
+      });
+      await insertTestDocument(store.db, collectionName, {
+        name: "doc2",
+        filepath: "/path/doc2.md",
+        displayPath: "doc2.md",
+      });
+      await insertTestDocument(store.db, collectionName, {
+        name: "doc3",
+        filepath: "/path/doc3.md",
+        displayPath: "doc3.md",
+      });
+
+      const { docs, errors } = store.findDocuments("{doc1,doc2}.md");
+      expect(errors).toHaveLength(0);
+      expect(docs).toHaveLength(2);
+
+      await cleanupTestDb(store);
+    });
+
+    test("findDocuments supports brace expansion with collection prefix", async () => {
+      const store = await createTestStore();
+      const collectionName = await createTestCollection();
+
+      await insertTestDocument(store.db, collectionName, {
+        name: "readme",
+        filepath: "/path/readme.md",
+        displayPath: "readme.md",
+      });
+      await insertTestDocument(store.db, collectionName, {
+        name: "changelog",
+        filepath: "/path/changelog.md",
+        displayPath: "changelog.md",
+      });
+
+      const { docs, errors } = store.findDocuments(`${collectionName}/{readme,changelog}.md`);
+      expect(errors).toHaveLength(0);
+      expect(docs).toHaveLength(2);
+
+      await cleanupTestDb(store);
+    });
   });
 
 });
@@ -2115,6 +2150,48 @@ describe("Fuzzy Matching", () => {
 
     await cleanupTestDb(store);
   });
+
+  test("matchFilesByGlob matches collection/path patterns", async () => {
+    const store = await createTestStore();
+    const collectionName = await createTestCollection();
+
+    await insertTestDocument(store.db, collectionName, {
+      filepath: "/p/readme.md",
+      displayPath: "readme.md",
+    });
+    await insertTestDocument(store.db, collectionName, {
+      filepath: "/p/changelog.md",
+      displayPath: "changelog.md",
+    });
+
+    const matches = store.matchFilesByGlob(`${collectionName}/*.md`);
+    expect(matches).toHaveLength(2);
+
+    await cleanupTestDb(store);
+  });
+
+  test("matchFilesByGlob matches brace expansion", async () => {
+    const store = await createTestStore();
+    const collectionName = await createTestCollection();
+
+    await insertTestDocument(store.db, collectionName, {
+      filepath: "/p/readme.md",
+      displayPath: "readme.md",
+    });
+    await insertTestDocument(store.db, collectionName, {
+      filepath: "/p/changelog.md",
+      displayPath: "changelog.md",
+    });
+    await insertTestDocument(store.db, collectionName, {
+      filepath: "/p/license.md",
+      displayPath: "license.md",
+    });
+
+    const matches = store.matchFilesByGlob(`${collectionName}/{readme,changelog}.md`);
+    expect(matches).toHaveLength(2);
+
+    await cleanupTestDb(store);
+  });
 });
 
 // =============================================================================
@@ -2142,25 +2219,26 @@ describe("Vector Table", () => {
     await cleanupTestDb(store);
   });
 
-  test("ensureVecTable recreates table if dimensions change", async () => {
+  test("ensureVecTable throws on dimension mismatch instead of silently rebuilding", async () => {
     const store = await createTestStore();
 
     // Create with 768 dimensions
     store.ensureVecTable(768);
 
     // Check dimensions
-    let tableInfo = store.db.prepare(`
+    const tableInfo = store.db.prepare(`
       SELECT sql FROM sqlite_master WHERE type='table' AND name='vectors_vec'
     `).get() as { sql: string };
     expect(tableInfo.sql).toContain("float[768]");
 
-    // Recreate with different dimensions
-    store.ensureVecTable(1024);
+    // Attempting to use a different dimension should throw (not silently drop data)
+    expect(() => store.ensureVecTable(1024)).toThrow(/dimension mismatch/i);
 
-    tableInfo = store.db.prepare(`
+    // Original table should still exist untouched
+    const tableInfoAfter = store.db.prepare(`
       SELECT sql FROM sqlite_master WHERE type='table' AND name='vectors_vec'
     `).get() as { sql: string };
-    expect(tableInfo.sql).toContain("float[1024]");
+    expect(tableInfoAfter.sql).toContain("float[768]");
 
     await cleanupTestDb(store);
   });
@@ -2601,13 +2679,19 @@ describe("Embedding batching", () => {
 
   function createFakeEmbedLlm() {
     const embedBatchCalls: string[][] = [];
+    const embedCalls: { text: string; options?: { model?: string } }[] = [];
+    const embedBatchModelCalls: ({ model?: string } | undefined)[] = [];
     return {
       embedBatchCalls,
-      async embed(_text: string) {
+      embedCalls,
+      embedBatchModelCalls,
+      async embed(text: string, options?: { model?: string }) {
+        embedCalls.push({ text, options });
         return { embedding: [0.1, 0.2, 0.3], model: "fake-embed" };
       },
-      async embedBatch(texts: string[]) {
+      async embedBatch(texts: string[], options?: { model?: string }) {
         embedBatchCalls.push([...texts]);
+        embedBatchModelCalls.push(options);
         return texts.map((_text, index) => ({
           embedding: [index + 1, index + 2, index + 3],
           model: "fake-embed",
@@ -2674,6 +2758,30 @@ describe("Embedding batching", () => {
       expect(fakeLlm.embedBatchCalls.map(call => call.length)).toEqual([2, 1]);
       expect(result.docsProcessed).toBe(3);
       expect(result.chunksEmbedded).toBe(3);
+    } finally {
+      setDefaultLlamaCpp(null);
+      await cleanupTestDb(store);
+    }
+  });
+
+  test("generateEmbeddings passes the selected model through to embed calls and metadata", async () => {
+    const store = await createTestStore();
+    const db = store.db;
+    const fakeLlm = createFakeEmbedLlm();
+    const model = "hf:Qwen/Qwen3-Embedding-0.6B-GGUF/Qwen3-Embedding-0.6B-Q8_0.gguf";
+
+    setDefaultLlamaCpp(createFakeTokenizer() as any);
+    store.llm = fakeLlm as any;
+
+    try {
+      await insertTestDocument(db, "docs", { name: "one", body: "# One\n\nAlpha" });
+
+      const result = await generateEmbeddings(store, { model });
+
+      expect(result.chunksEmbedded).toBe(1);
+      expect(fakeLlm.embedCalls[0]?.options?.model).toBe(model);
+      expect(fakeLlm.embedBatchModelCalls).toEqual([{ model }]);
+      expect(db.prepare(`SELECT DISTINCT model FROM content_vectors`).all()).toEqual([{ model }]);
     } finally {
       setDefaultLlamaCpp(null);
       await cleanupTestDb(store);

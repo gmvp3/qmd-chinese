@@ -16,11 +16,14 @@ set -euo pipefail
 # Usage: scripts/extract-changelog.sh <version>
 # Example: scripts/extract-changelog.sh 1.0.5
 #   -> extracts [Unreleased] + [1.0.5], [1.0.4], ..., [1.0.0]
+# Example: scripts/extract-changelog.sh 1.1.0-beta.1
+#   -> extracts [Unreleased] + [1.1.0-beta.1], [1.1.x], ... for the same minor series
 
 VERSION="${1:?Usage: extract-changelog.sh <version>}"
+CORE_VERSION="${VERSION%%-*}"
 
-# Parse major.minor.patch from version
-IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
+# Parse major.minor.patch from version core (ignore prerelease suffix)
+IFS='.' read -r MAJOR MINOR PATCH <<< "$CORE_VERSION"
 
 if [[ ! -f CHANGELOG.md ]]; then
   echo "CHANGELOG.md not found" >&2
@@ -37,10 +40,11 @@ while IFS= read -r line; do
   if [[ "$line" =~ ^##\ \[Unreleased\] ]]; then
     CAPTURING=true
     IN_UNRELEASED=true
-  elif [[ "$line" =~ ^##\ \[([0-9]+\.[0-9]+\.[0-9]+)\] ]]; then
+  elif [[ "$line" =~ ^##\ \[([0-9]+\.[0-9]+\.[0-9]+([-.][A-Za-z0-9.]+)?)\] ]]; then
     IN_UNRELEASED=false
     ENTRY_VERSION="${BASH_REMATCH[1]}"
-    IFS='.' read -r E_MAJOR E_MINOR E_PATCH <<< "$ENTRY_VERSION"
+    ENTRY_CORE_VERSION="${ENTRY_VERSION%%-*}"
+    IFS='.' read -r E_MAJOR E_MINOR E_PATCH <<< "$ENTRY_CORE_VERSION"
     if [[ "$E_MAJOR" == "$MAJOR" && "$E_MINOR" == "$MINOR" ]]; then
       CAPTURING=true
       OUTPUT+="$line"$'\n'

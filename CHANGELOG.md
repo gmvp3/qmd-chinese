@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [1.1.0-beta.1] - 2026-04-12
+
+### Changed
+- Sync upstream QMD `v2.1.0` into the Chinese fork as the first public beta integration release.
+- Keep Chinese-optimized defaults (`BGE-M3` / `bge-reranker-v2-m3` / `Qwen2.5-1.5B-Instruct`) while absorbing upstream support for AST-aware chunking, `qmd bench`, clickable editor links, collection-level model config, and multiple BM25 / embedding stability fixes.
+- Make `qmd status` skip device probing under CI / test environments so the new upstream status output remains fast and testable.
+
 ## [1.0.18] - 2026-04-02
 
 ### Fixed

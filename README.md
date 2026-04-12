@@ -9,7 +9,16 @@ QMD-Chinese 是专为中文语境深度改造的本地 RAG (检索增强生成) 
 
 ## 🚀 核心特性与模型组合
 
-摒弃了原版对英文主导模型的依赖，本分支使用了当前地表最强的本地中文处理流水线：
+摒弃了原版对英文主导模型的依赖，本分支使用了当前地表最强的本地中文处理流水线。
+同时本分支已开始同步 upstream `v2.1.0` 的关键能力，包括：
+
+* **AST 感知代码切块:** 支持 TypeScript/JavaScript、Python、Go、Rust 的函数/类级切块（`--chunk-strategy auto`）
+* **Bench 基准评测:** 新增 `qmd bench <fixture.json>` 用于量化检索质量
+* **可点击搜索结果链接:** 终端 TTY 下支持跳转到编辑器指定行
+* **Collection 级模型配置:** 支持在 `index.yml` 中按集合配置 embed / rerank / generate 模型
+* **更稳的 Embedding / BM25 / 启动器修复:** 吸收上游稳定性与跨平台改进
+
+当前默认模型仍保持中文优化路线：
 
 * **Query Expansion (查询前置扩写):** `Qwen2.5-1.5B-Instruct` (极大提升中文口语化提问的命中率)
 * **Embedding (向量嵌入):** `BGE-M3` (智源顶配多语言向量模型，支持超长上下文)

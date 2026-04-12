@@ -117,6 +117,50 @@ describe("LlamaCpp expand context size config", () => {
   });
 });
 
+describe("LlamaCpp model resolution (config > env > default)", () => {
+  const HARDCODED_EMBED = "hf:gpustack/bge-m3-GGUF/bge-m3-Q8_0.gguf";
+  const HARDCODED_RERANK = "hf:gpustack/bge-reranker-v2-m3-GGUF/bge-reranker-v2-m3-Q8_0.gguf";
+  const HARDCODED_GENERATE = "hf:Qwen/Qwen2.5-1.5B-Instruct-GGUF/qwen2.5-1.5b-instruct-q4_k_m.gguf";
+
+  test("uses hardcoded default when no config or env is set", () => {
+    const prev = process.env.QMD_EMBED_MODEL;
+    delete process.env.QMD_EMBED_MODEL;
+    try {
+      const llm = new LlamaCpp({}) as any;
+      expect(llm.embedModelUri).toBe(HARDCODED_EMBED);
+      expect(llm.rerankModelUri).toBe(HARDCODED_RERANK);
+      expect(llm.generateModelUri).toBe(HARDCODED_GENERATE);
+    } finally {
+      if (prev === undefined) delete process.env.QMD_EMBED_MODEL;
+      else process.env.QMD_EMBED_MODEL = prev;
+    }
+  });
+
+  test("env var overrides hardcoded default", () => {
+    const prev = process.env.QMD_EMBED_MODEL;
+    process.env.QMD_EMBED_MODEL = "hf:custom/embed-model.gguf";
+    try {
+      const llm = new LlamaCpp({}) as any;
+      expect(llm.embedModelUri).toBe("hf:custom/embed-model.gguf");
+    } finally {
+      if (prev === undefined) delete process.env.QMD_EMBED_MODEL;
+      else process.env.QMD_EMBED_MODEL = prev;
+    }
+  });
+
+  test("config overrides env var", () => {
+    const prev = process.env.QMD_EMBED_MODEL;
+    process.env.QMD_EMBED_MODEL = "hf:env/model.gguf";
+    try {
+      const llm = new LlamaCpp({ embedModel: "hf:config/model.gguf" }) as any;
+      expect(llm.embedModelUri).toBe("hf:config/model.gguf");
+    } finally {
+      if (prev === undefined) delete process.env.QMD_EMBED_MODEL;
+      else process.env.QMD_EMBED_MODEL = prev;
+    }
+  });
+});
+
 describe("LlamaCpp rerank deduping", () => {
   test("deduplicates identical document texts before scoring", async () => {
     const llm = new LlamaCpp({}) as any;
@@ -169,8 +213,8 @@ describe.skipIf(!!process.env.CI)("LlamaCpp Integration", () => {
       expect(result).not.toBeNull();
       expect(result!.embedding).toBeInstanceOf(Array);
       expect(result!.embedding.length).toBeGreaterThan(0);
-      // embeddinggemma outputs 768 dimensions
-      expect(result!.embedding.length).toBe(768);
+      // BGE-M3 outputs 1024 dimensions
+      expect(result!.embedding.length).toBe(1024);
     });
 
     test("returns consistent embeddings for same input", async () => {
@@ -218,7 +262,7 @@ describe.skipIf(!!process.env.CI)("LlamaCpp Integration", () => {
       expect(results).toHaveLength(3);
       for (const result of results) {
         expect(result).not.toBeNull();
-        expect(result!.embedding.length).toBe(768);
+        expect(result!.embedding.length).toBe(1024);
       }
     });
 
@@ -563,7 +607,7 @@ describe.skipIf(!!process.env.CI)("LLM Session Management", () => {
         expect(session.isValid).toBe(true);
         const embedding = await session.embed("test text");
         expect(embedding).not.toBeNull();
-        expect(embedding!.embedding.length).toBe(768);
+        expect(embedding!.embedding.length).toBe(1024);
         return "success";
       });
       expect(result).toBe("success");
@@ -625,7 +669,7 @@ describe.skipIf(!!process.env.CI)("LLM Session Management", () => {
         expect(results).toHaveLength(3);
         for (const result of results) {
           expect(result).not.toBeNull();
-          expect(result!.embedding.length).toBe(768);
+          expect(result!.embedding.length).toBe(1024);
         }
       });
     });
