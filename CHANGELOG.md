@@ -2,12 +2,27 @@
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-04-12
+
+### 正式发布
+- 发布 QMD 中文版首个稳定正式版，基于 upstream QMD `v2.1.0` 的手工集成结果对外发布。
+
+### 主要更新
+- 同步 upstream `v2.1.0` 的核心能力，包括 AST 感知切块、`qmd bench`、可点击编辑器链接、collection 级模型配置，以及多项 BM25、embedding、测试稳定性修复。
+- 保留并继续默认启用中文优化模型组合：`BGE-M3`、`bge-reranker-v2-m3`、`Qwen2.5-1.5B-Instruct`。
+- 保留国内网络适配，包括 `HF_ENDPOINT` 镜像策略与多目录 `.env` 加载支持。
+
+### 修复
+- `qmd status` 在 CI / test 环境下不再触发设备探测，输出更稳定、测试更快。
+- 修复 Bun 单进程测试场景下 `store.ts` 的 `_productionMode` 状态泄漏问题，恢复 Node / Bun CI 全绿。
+- 补齐 Linux 与 macOS 的 Nix flake `nodeModules` hash，恢复跨平台 flake 构建通过。
+
 ## [1.1.0-beta.1] - 2026-04-12
 
-### Changed
-- Sync upstream QMD `v2.1.0` into the Chinese fork as the first public beta integration release.
-- Keep Chinese-optimized defaults (`BGE-M3` / `bge-reranker-v2-m3` / `Qwen2.5-1.5B-Instruct`) while absorbing upstream support for AST-aware chunking, `qmd bench`, clickable editor links, collection-level model config, and multiple BM25 / embedding stability fixes.
-- Make `qmd status` skip device probing under CI / test environments so the new upstream status output remains fast and testable.
+### 变更
+- 作为首个公开 beta，完成 upstream QMD `v2.1.0` 向中文分支的手工集成。
+- 在吸收 AST 感知切块、`qmd bench`、可点击编辑器链接、collection 级模型配置以及多项 BM25 / embedding 稳定性修复的同时，保留中文优化默认模型。
+- 调整 `qmd status`，在 CI / test 环境下跳过设备探测，保证新状态输出可测试且响应更快。
 
 ## [1.0.18] - 2026-04-02
 
